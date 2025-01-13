@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>美国房价走势线图</title>
+  <!-- 引入 D3.js 库 -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* 全局样式 */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    /* 主容器：左右分栏 */
+    .main-container {
+      display: flex;
+      width: 100%;
+      max-width: 1200px; /* 可根据需要调整最大宽度 */
+      gap: 20px; /* 左右分栏之间的间距 */
+    }
+    /* 左侧图表区域 */
+    .charts-container {
+      display: flex;
+      flex-direction: column;
+      flex: 8; /* 左侧宽度比例为8 */
+      gap: 20px; /* 标题与主图之间的间距，以及主图和副图之间的间距 */
+    }
+    /* 标题样式 */
+    .charts-container h2 {
+      margin: 0;
+      padding: 0;
+      font-size: 24px;
+      font-weight: bold;
+      text-align: left; /* 左对齐 */
+    }
+    /* 主图容器 */
+    .svg-container {
+      position: relative;
+      flex: 3; /* 主图高度比例为3 */
+      height: 0;
+      padding-bottom: 60.00%; /* 高度比例3:2 (3/(3+2)) = 60% padding-bottom; 调整为66.66%确保主图高度为容器的60% */
+      overflow: hidden;
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    .svg-content {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    /* 副图容器 */
+    .bar-chart-container {
+      position: relative;
+      flex: 2; /* 副图高度比例为2 */
+      height: 0;
+      padding-bottom: 40.00%; /* 高度比例2:3 (2/(2+3)) = 40% padding-bottom; 调整为66.66%确保副图高度为容器的40% */
+      overflow: hidden;
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    .bar-chart {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    /* 右侧控制区域 */
+    .controls-container {
+      flex: 2; /* 右侧宽度比例为2 */
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 20px; /* 下拉菜单之间的间距 */
+      min-width: 200px; /* 设置最小宽度以确保良好显示 */
+       /* 添加以下属性以调整三个下拉菜单与顶部的距离 */
+      margin-top: 50px; /* 根据需要调整数值 */
+    }
+    .controls {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 15px; /* 每个下拉菜单的间距 */
+    }
+    .controls label {
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .controls select {
+      padding: 5px;
+      font-size: 14px;
+      width: 100%;
+    }
+    /* 图例容器 */
+    .legend-container {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      max-height: 70%;
+      overflow-y: auto;
+    }
+    /* 网格线样式 */
+    .grid line {
+      stroke: lightgrey;
+      stroke-opacity: 0.7;
+      shape-rendering: crispEdges;
+    }
+
+    .grid path {
+      stroke-width: 0;
+    }
+
+    /* 光标线样式 */
+    .cursor-line {
+      stroke: grey;
+      stroke-width: 1px;
+      stroke-dasharray: 3,3;
+      opacity: 0;
+    }
+
+    /* Tooltip样式 */
+    .tooltip {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 8px;
+      border: 1px solid #333;
+      border-radius: 5px;
+      pointer-events: none;
+      font-size: 12px;
+      box-shadow: 0px 0px 5px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 10;
+    }
+
+    /* Forecast 开关按钮样式 */
+    .forecast-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .forecast-toggle input[type="checkbox"] {
+      appearance: none;
+      width: 40px;
+      height: 20px;
+      background-color: #ccc;
+      border-radius: 15px;
+      position: relative;
+      outline: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .forecast-toggle input[type="checkbox"]:checked {
+      background-color: #007bff;
+    }
+
+    .forecast-toggle input[type="checkbox"]::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background-color: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.3s ease;
+    }
+
+    .forecast-toggle input[type="checkbox"]:checked::before {
+      transform: translateX(20px);
+    }
+
+
+    /* 高亮样式 */
+    .highlight-circle {
+      fill: none; /* 移除填充颜色 */
+      stroke: grey; /* 设置边框颜色 */
+      stroke-width: 1px; /* 设置边框宽度 */
+      r: 3px; /* 设置圆圈半径 */
+    }
+  </style>
+</head>
+<body>
+  <!-- 主容器：左侧图表，右侧控制 -->
+  <div class="main-container">
+    <!-- 左侧图表区域 -->
+    <div class="charts-container">
+      <!-- 标题放在主图和副图的正上方 -->
+      <h2>美国房价走势线图（2000年1月至2000年6月）</h2>
+      
+      <!-- 主图容器 -->
+      <div class="svg-container">
+        <svg id="chart-svg" class="svg-content" viewBox="0 0 900 400" preserveAspectRatio="xMidYMid meet"></svg>
+        <!-- 创建一个容器用于图例 -->
+        <div class="legend-container" id="legend"></div>
+      </div>
+      
+      <!-- 副图容器 -->
+      <div class="bar-chart-container">
+        <svg id="bar-chart-svg" class="bar-chart" viewBox="0 0 500 400" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+    </div>
+    
+    <!-- 右侧控制区域 -->
+    <div class="controls-container">
+      <div class="controls">
+        <label for="stateSelect">State:</label>
+        <select id="stateSelect">
+          <option value="All">All</option>
+          <!-- 动态填充州选项 -->
+        </select>
+      </div>
+      
+      <div class="controls">
+        <label for="regionSelect">Region:</label>
+        <select id="regionSelect">
+          <option value="All">All</option>
+          <!-- 动态填充地区选项 -->
+        </select>
+      </div>
+
+      <div class="controls">
+        <label for="forecastToggle">Forecast:</label>
+        <div class="forecast-toggle">
+          <input type="checkbox" id="forecastToggle">
+          <label for="forecastToggle">On</label>
+        </div>
+      </div>
+      
+      <div class="controls">
+        <label for="yearSelect">Year:</label>
+        <select id="yearSelect">
+          <option value="All">All</option>
+          <!-- 动态填充年份选项 -->
+        </select>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 创建一个容器用于Tooltip -->
+  <div id="tooltip" class="tooltip"></div>
+
+  <script>
+    // 1. 加载CSV数据
+    d3.csv("Data_original_predict.csv").then(function(data) {
+      // 2. 解析数据
+      const parseDate = d3.timeParse("%m/%d/%Y");
+      const regions = data.map(d => ({
+        RegionName: d.RegionName,
+        StateName: d.StateName,
+        values: Object.entries(d)
+          .filter(([key, value]) => key !== "RegionName" && key !== "StateName")
+          .map(([key, value]) => ({
+            date: parseDate(key),
+            price: +value
+          }))
+          .filter(d => d.date !== null && !isNaN(d.price)) // 过滤无效数据
+          .sort((a, b) => a.date - b.date)
+      }));
+
+
+      // 添加调试信息
+      console.log("转换后的regions数据:", regions);
+
+      // 3. 聚合数据按州计算平均房价
+      const statesData = Array.from(
+        d3.group(regions, d => d.StateName),
+        ([StateName, regionsInState]) => {
+          // 对每个州的每个日期计算平均房价
+          const dateMap = d3.rollup(
+            regionsInState.flatMap(region => region.values),
+            v => d3.mean(v, d => d.price),
+            d => d.date
+          );
+          const values = Array.from(dateMap, ([date, price]) => ({ date, price })).sort((a, b) => a.date - b.date);
+          return { RegionName: StateName, StateName: StateName, values };
+        }
+      );
+
+      // 4. 设置画布尺寸和边距
+      const marginMain = { top: 40, right: 100, bottom: 40, left: 60 },
+            widthMain = 900 - marginMain.left - marginMain.right,
+            heightMain = 400 - marginMain.top - marginMain.bottom;
+
+      const marginBar = { top: 40, right: 20, bottom: 40, left: 60 },
+            widthBar = 500 - marginBar.left - marginBar.right,
+            heightBar = 400 - marginBar.top - marginBar.bottom;
+
+      // 5. 选择SVG元素并设置视图
+      const svg = d3.select("#chart-svg")
+        .attr("viewBox", `0 0 900 400`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .append("g")
+        .attr("transform", `translate(${marginMain.left},${marginMain.top})`);
+
+      // 初始化副图SVG
+      const barSvg = d3.select("#bar-chart-svg")
+          .attr("width", 500)  // 明确设置宽度
+          .attr("height", 400) // 明确设置高度
+          .append("g")
+          .attr("transform", `translate(${marginBar.left},${marginBar.top})`);
+
+      // 6. 设置x和y比例尺（主图）
+      const x = d3.scaleTime()
+        .domain(d3.extent(regions.flatMap(region => region.values.map(d => d.date))))
+        .range([0, widthMain]);
+
+      const y = d3.scaleLinear()
+        .domain([
+          d3.min(regions, region => d3.min(region.values, d => d.price)) * 0.95,
+          d3.max(regions, region => d3.max(region.values, d => d.price)) * 1.05
+        ])
+        .range([heightMain, 0]);
+
+      // 6. 设置x和y比例尺（副图）
+      const xBar = d3.scaleBand()
+          .range([0, 500 - marginBar.left - marginBar.right])  // 调整宽度
+          .padding(0.1);
+      const yBar = d3.scaleLinear()
+          .range([400 - marginBar.top - marginBar.bottom, 0]);  // 调整高度
+
+      // 7. 设置颜色比例尺
+      const color = d3.scaleOrdinal(d3.schemeCategory10)
+        .domain(regions.map(d => d.RegionName));
+
+      // 8. 添加网格线（主图）
+      // 添加X轴网格线
+      svg.append("g")			
+          .attr("class", "grid")
+          .attr("transform", `translate(0,${heightMain})`)
+          .call(d3.axisBottom(x)
+              .ticks(6)
+              .tickSize(-heightMain)
+              .tickFormat("")
+          );
+
+      // 添加Y轴网格线
+      svg.append("g")			
+          .attr("class", "grid")
+          .call(d3.axisLeft(y)
+              .ticks(6)
+              .tickSize(-widthMain)
+              .tickFormat("")
+          );
+
+      // 9. 绘制x轴（主图）
+      svg.append("g")
+        .attr("class", "x-axis")
+        .attr("transform", `translate(0,${heightMain})`)
+        .call(d3.axisBottom(x).ticks(6))
+        .append("text")
+        .attr("x", widthMain / 2)
+        .attr("y", 35)
+        .attr("fill", "black")
+        .attr("text-anchor", "middle")
+        .attr("class", "axis-label")
+        .text("日期");
+
+      // 10. 绘制y轴（主图）
+      svg.append("g")
+        .attr("class", "y-axis")
+        .call(d3.axisLeft(y))
+        .append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -heightMain / 2)
+        .attr("y", -50)
+        .attr("fill", "black")
+        .attr("text-anchor", "middle")
+        .attr("class", "axis-label")
+        .text("房价");
+
+      // 11. 定义线生成器
+      const lineGenerator = d3.line()
+        .x(d => x(d.date))
+        .y(d => y(d.price));
+
+      // 12. 添加图例到独立的容器
+      const legendContainer = d3.select("#legend");
+
+      // 13. 添加鼠标悬停提示（Tooltip）
+      const tooltip = d3.select("#tooltip");
+
+      // 14. 初始化下拉菜单
+      const stateSelect = d3.select("#stateSelect");
+      const regionSelect = d3.select("#regionSelect");
+      const yearSelect = d3.select("#yearSelect"); // 新增的Year选择器
+
+
+
+      // 获取唯一的州列表
+      const states = Array.from(new Set(data.map(d => d.StateName))).sort();
+      stateSelect.selectAll("option.state-option")
+        .data(states)
+        .enter()
+        .append("option")
+        .attr("class", "state-option")
+        .attr("value", d => d)
+        .text(d => d);
+
+      // 15. 提取唯一的年份并填充Year下拉菜单
+      const years = Array.from(new Set(regions.flatMap(region => region.values.map(d => d.date.getFullYear())))).sort((a, b) => a - b);
+      yearSelect.selectAll("option.year-option")
+        .data(years)
+        .enter()
+        .append("option")
+        .attr("class", "year-option")
+        .attr("value", d => d)
+        .text(d => d);
+
+      const columns = data.columns || Object.keys(data[0]);
+      const forecastColumns = columns.slice(-5); // 最后5列
+
+      // 16. 添加事件监听器到所有下拉菜单
+      stateSelect.on("change", function () {
+        const selectedState = stateSelect.property("value");
+
+        // 更新 Region 下拉菜单选项
+        updateRegionSelect(selectedState);
+
+        // 如果州切换到“所有州”，才重置Region的选中值为 "All"
+        if (selectedState === "All") {
+            regionSelect.property("value", "All");
+        }
+
+        // 调用 updateFilters 更新图表
+        updateFilters();
+      });
+
+      regionSelect.on("change", function () {
+        updateFilters();
+      });
+
+      yearSelect.on("change", function () {
+        updateFilters();
+      });
+
+
+      // 初始化 Forecast 开关按钮
+      forecastToggle.addEventListener("change", function () {
+        showForecast = forecastToggle.checked; // 更新 showForecast 的状态
+        console.log("Forecast 开关状态:", showForecast ? "On" : "Off");
+        updateFilters(); // 触发过滤和图表更新
+      });
+
+
+      // 函数：更新Region下拉菜单
+      function updateRegionSelect(selectedState) {
+
+
+        // 获取当前选中的值
+        const currentRegion = regionSelect.property("value");
+
+        if (selectedState === "All" || !selectedState) {
+          // 如果选择“All”或没有选择，禁用Region下拉菜单并重置
+          regionSelect.selectAll("option").remove();
+          regionSelect.append("option").attr("value", "All").text("All");
+          regionSelect.property("disabled", false);
+        } else {
+          // 否则，根据选择的州填充Region下拉菜单
+          const regionsInState = Array.from(new Set(
+            regions
+              .filter(d => d.StateName === selectedState)
+              .map(d => d.RegionName)
+          )).sort();
+
+          // 清空现有选项
+          regionSelect.selectAll("option").remove();
+
+          // 添加“All”选项
+          regionSelect.append("option").attr("value", "All").text("All");
+
+          // 添加地区选项
+          regionSelect.selectAll("option.region-option")
+            .data(regionsInState)
+            .enter()
+            .append("option")
+            .attr("class", "region-option")
+            .attr("value", d => d)
+            .text(d => d);
+
+          // 启用Region下拉菜单
+          regionSelect.property("disabled", false).attr("disabled", null);
+        }
+
+        // **重新设置选中值**
+        if (currentRegion && regionsInState.includes(currentRegion)) {
+            regionSelect.property("value", currentRegion);
+        } else {
+            regionSelect.property("value", "All");
+        }
+      }
+
+      // 函数：更新所有过滤条件并刷新图表
+      function updateFilters() {
+        // 获取当前选择的州
+        const selectedState = stateSelect.property("value");
+
+ 
+        // 获取当前选择的地区
+        const selectedRegion = regionSelect.property("value");
+
+        // 获取当前选择的年份
+        const selectedYear = yearSelect.property("value");
+
+        console.log("选择的州:", selectedState, "选择的地区:", selectedRegion, "选择的年份:", selectedYear);
+
+        // 根据选择的州过滤数据
+	    let filteredRegions;
+
+	    if (selectedState === "All" || !selectedState) {
+	        filteredRegions = statesData; // 使用按州聚合的数据
+	    } else {
+	        filteredRegions = regions.filter(d => d.StateName === selectedState);
+
+	        // 如果选择了特定地区，进一步过滤
+	        if (selectedRegion !== "All" && selectedRegion) {
+	            filteredRegions = filteredRegions.filter(d => d.RegionName === selectedRegion);
+	        }
+	    }
+
+        // 如果选择了特定年份，进一步过滤数据
+        if (selectedYear !== "All" && selectedYear) {
+          const yearNum = +selectedYear;
+          filteredRegions = filteredRegions.map(region => ({
+            ...region,
+            values: region.values.filter(d => d.date.getFullYear() === yearNum)
+          })).filter(region => region.values.length > 0);
+        }
+
+        // **根据 showForecast 决定是否过滤预测列**
+        filteredRegions = filteredRegions.map(region => ({
+          ...region,
+          values: region.values.filter(d => {
+            const isForecast = forecastColumns.includes(d3.timeFormat("%m/%d/%Y")(d.date)); // 检查是否为预测列
+            return showForecast || !isForecast; // 如果关闭预测列，移除这些数据
+          })
+        }));
+
+        // 确定数据类型
+        let dataType;
+        if (selectedState === "All" || selectedRegion === "All") {
+          dataType = "State";
+        } else {
+          dataType = "Region";
+        }
+
+        // 更新主图
+        updateChart(filteredRegions, dataType, showForecast);
+
+        // 更新Region下拉菜单
+        updateRegionSelect(selectedState);
+
+        // 更新副图
+        updateBarChart(filteredRegions, selectedYear);
+
+
+      }
+
+      // 函数：更新主图
+      function updateChart(filteredRegions, dataType, showForecast) {
+        console.log("更新后的regions数据:", filteredRegions, "显示预测列:", showForecast);
+
+        // **过滤掉预测数据（如果 showForecast 为 false）**
+        const updatedRegions = filteredRegions.map(region => ({
+          ...region,
+          values: region.values.filter(d => {
+            const isForecast = forecastColumns.includes(d3.timeFormat("%m/%d/%Y")(d.date)); // 假设预测数据是未来的日期
+            return showForecast || !isForecast; // 如果不显示预测数据，则移除未来数据
+          })
+        }));
+
+        console.log("过滤后的 regions 数据:", updatedRegions);
+
+        // 更新y比例尺的域
+        const newYDomain = [
+          d3.min(updatedRegions, region => d3.min(region.values, d => d.price)) * 0.95,
+          d3.max(updatedRegions, region => d3.max(region.values, d => d.price)) * 1.05
+        ];
+        y.domain(newYDomain);
+
+        // 更新y轴
+        svg.selectAll("g.y-axis")
+          .transition()
+          .duration(1000)
+          .call(d3.axisLeft(y))
+          .selectAll(".axis-label")
+          .attr("x", -heightMain / 2)
+          .attr("y", -50);
+
+        // 计算新的X轴域
+        const allDates = updatedRegions.flatMap(region => region.values.map(d => d.date));
+        const newXDomain = d3.extent(allDates);
+
+        // 更新x比例尺的域
+        x.domain(newXDomain);
+
+        // 更新x轴
+        svg.selectAll("g.x-axis")
+          .transition()
+          .duration(1000)
+          .call(d3.axisBottom(x).ticks(6))
+          .selectAll(".axis-label")
+          .attr("x", widthMain / 2)
+          .attr("y", 35);
+
+        // 更新网格线
+        svg.selectAll(".grid").remove();
+
+        // 重新添加网格线
+        // 添加X轴网格线
+        svg.append("g")			
+            .attr("class", "grid")
+            .attr("transform", `translate(0,${heightMain})`)
+            .call(d3.axisBottom(x)
+                .ticks(6)
+                .tickSize(-heightMain)
+                .tickFormat("")
+            );
+
+        // 添加Y轴网格线
+        svg.append("g")			
+            .attr("class", "grid")
+            .call(d3.axisLeft(y)
+                .ticks(6)
+                .tickSize(-widthMain)
+                .tickFormat("")
+            );
+        // **根据 showForecast 控制预测区域的显示与隐藏**
+        svg.selectAll(".forecast-area").remove(); // 首先移除所有预测区域
+
+        if (showForecast) {
+          const areaGenerator = d3.area()
+            .x(d => x(d.date))    // x 坐标为时间
+            .y0(heightMain)       // y0 是图表的底部
+            .y1(d => y(d.price)); // y1 是预测值的顶部
+
+          const forecastRegions = updatedRegions.filter(region =>
+            region.values.some(d => forecastColumns.includes(d3.timeFormat("%m/%d/%Y")(d.date)))
+          );
+
+          forecastRegions.forEach(region => {
+            svg.append("path")
+              .datum(region.values.filter(d =>
+                forecastColumns.includes(d3.timeFormat("%m/%d/%Y")(d.date))
+              )) // 仅包含预测数据
+              .attr("class", "forecast-area")
+              .attr("fill", "rgba(255, 0, 0, 0.2)") // 半透明红色填充
+              .attr("d", areaGenerator);
+          });
+        }
+
+
+        // 数据绑定
+        const updatedLines = svg.selectAll(".line")
+          .data(updatedRegions, d => d.RegionName);
+
+        // 处理进入部分
+        updatedLines.enter()
+          .append("path")
+          .attr("class", "line")
+          .attr("d", d => lineGenerator(d.values))
+          .attr("stroke", d => color(d.RegionName))
+          .attr("stroke-width", 2)
+          .attr("fill", "none");
+
+        // 更新部分
+        updatedLines
+          .transition()
+          .duration(1000)
+          .attr("d", d => lineGenerator(d.values))
+          .attr("stroke", d => color(d.RegionName));
+
+        // 处理退出部分
+        updatedLines.exit()
+          .transition()
+          .duration(1000)
+          .style("opacity", 0)
+          .remove();
+
+        // 更新图例
+        updateLegend(updatedRegions);
+
+        // 添加或更新光标线和Tooltip
+        addCursorLine(updatedRegions, dataType);
+      }
+
+      // 函数：更新图例
+      function updateLegend(filteredRegions) {
+        const legendContainer = d3.select("#legend");
+        legendContainer.selectAll(".legend-item").remove();
+
+        filteredRegions.forEach((region, i) => {
+          const legendItem = legendContainer.append("div")
+            .attr("class", "legend-item")
+            .style("display", "flex")
+            .style("align-items", "center")
+            .style("margin-bottom", "5px");
+
+          legendItem.append("div")
+            .attr("class", "legend-color")
+            .style("width", "12px")
+            .style("height", "12px")
+            .style("background-color", color(region.RegionName))
+            .style("margin-right", "5px");
+
+          legendItem.append("div")
+            .text(region.RegionName)
+            .style("font-size", "12px");
+        });
+      }
+
+      // 函数：添加光标线和Tooltip交互
+      function addCursorLine(filteredRegions, dataType) {
+        // 移除已有的光标线和高亮圆点
+        svg.selectAll(".cursor-line").remove();
+        svg.selectAll(".highlight-circle").remove();
+        svg.selectAll(".overlay").remove();
+
+        // 定义光标线
+        const cursor = svg.append("line")
+          .attr("class", "cursor-line")
+          .attr("y1", 0)
+          .attr("y2", heightMain)
+          .attr("x1", 0)
+          .attr("x2", 0)
+          .style("opacity", 0);
+
+        // 定义高亮圆点组
+        const highlightGroup = svg.append("g")
+          .attr("class", "highlight-group");
+
+        // 定义鼠标移动区域
+        svg.append("rect")
+          .attr("class", "overlay")
+          .attr("width", widthMain)
+          .attr("height", heightMain)
+          .style("fill", "none")
+          .style("pointer-events", "all")
+          .on("mouseover", function() {
+            cursor.style("opacity", 1);
+            tooltip.style("opacity", 1);
+          })
+          .on("mousemove", mousemove)
+          .on("mouseout", function() {
+            cursor.style("opacity", 0);
+            tooltip.style("opacity", 0);
+            highlightGroup.selectAll(".highlight-circle").remove();
+          });
+
+        // 定义bisector以查找最近的数据点
+        const bisectDate = d3.bisector(d => d.date).left;
+
+        function mousemove(event) {
+          const mouse = d3.pointer(event);
+          const mouseX = mouse[0];
+          const mouseDate = x.invert(mouseX);
+
+          // 更新光标线位置
+          cursor
+            .attr("x1", x(mouseDate))
+            .attr("x2", x(mouseDate));
+
+          // 根据数据类型构建 Tooltip
+          let tooltipHTML = `<strong>日期: ${d3.timeFormat("%Y-%m-%d")(mouseDate)}</strong><br/>`;
+
+          let highlightData = [];
+
+          if (dataType === "State") {
+            // 显示每个州的平均房价
+            filteredRegions.forEach(state => {
+              const idx = bisectDate(state.values, mouseDate, 1);
+              const d0 = state.values[idx - 1];
+              const d1 = state.values[idx];
+              let dClosest = d0;
+              if (d1 && (mouseDate - d0.date > d1.date - mouseDate)) {
+                dClosest = d1;
+              }
+
+              tooltipHTML += `<span style="color:${color(state.RegionName)};">&#9679;</span> <strong>${state.RegionName}:</strong> $${dClosest.price.toLocaleString()}<br/>`;
+
+              // 添加高亮圆点
+              highlightData.push({
+                x: x(dClosest.date),
+                y: y(dClosest.price)
+              });
+            });
+          } else {
+            // 显示各地区的房价
+            filteredRegions.forEach(region => {
+              const idx = bisectDate(region.values, mouseDate, 1);
+              const d0 = region.values[idx - 1];
+              const d1 = region.values[idx];
+              let dClosest = d0;
+              if (d1 && (mouseDate - d0.date > d1.date - mouseDate)) {
+                dClosest = d1;
+              }
+
+              tooltipHTML += `<span style="color:${color(region.RegionName)};">&#9679;</span> <strong>${region.RegionName}:</strong> $${dClosest.price.toLocaleString()}<br/>`;
+
+              // 添加高亮圆点
+              highlightData.push({
+                x: x(dClosest.date),
+                y: y(dClosest.price)
+              });
+            });
+          }
+
+          // 更新Tooltip内容和位置
+          tooltip
+            .html(tooltipHTML)
+            .style("left", (event.pageX + 15) + "px")
+            .style("top", (event.pageY - 28) + "px");
+
+          // 更新高亮圆点
+          highlightGroup.selectAll(".highlight-circle").remove();
+          highlightGroup.selectAll(".highlight-circle")
+            .data(highlightData)
+            .enter()
+            .append("circle")
+            .attr("class", "highlight-circle")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", 4)
+            .attr("fill", "none")
+            .attr("stroke", "grey");
+        }
+      }
+
+      // 函数：更新副图
+      function updateBarChart(filteredRegions, selectedYear) {
+        // 清空副图
+        barSvg.selectAll("*").remove();
+
+        // 如果没有选择年份，则不显示副图
+        if (selectedYear === "All" || !selectedYear) {
+          return;
+        }
+
+        // 根据选择的State和Region准备数据
+        let barData = [];
+
+        if (filteredRegions.length === 0) {
+          // 没有数据，什么也不做
+          return;
+        }
+
+        if (filteredRegions.length === 1 && filteredRegions[0].RegionName === filteredRegions[0].StateName) {
+          // 只选择了State，显示所有Regions的平均价格
+          barData = filteredRegions[0].values.map(d => ({
+            RegionName: filteredRegions[0].RegionName,
+            date: d.date,
+            price: d.price
+          }));
+        } else {
+          // 选择了具体的Region，显示该Region的价格
+          barData = filteredRegions.flatMap(region => region.values.map(d => ({
+            RegionName: region.RegionName,
+            date: d.date,
+            price: d.price
+          })));
+        }
+
+        // 如果选择了具体的Region，可能只有一个数据点
+        if (barData.length === 0) {
+          return;
+        }
+
+        // 如果只选择了一个Region和一个Year，准备单个柱状图数据
+        if (filteredRegions.length === 1 && barData.length === 1) {
+          barData = [{
+            RegionName: filteredRegions[0].RegionName,
+            price: barData[0].price
+          }];
+        } else {
+          // 否则，计算每个Region的平均价格
+          const grouped = d3.group(barData, d => d.RegionName);
+          barData = Array.from(grouped, ([RegionName, values]) => ({
+            RegionName: RegionName,
+            price: d3.mean(values, d => d.price)
+          }));
+        }
+
+        console.log("副图数据:", barData);
+
+        // 设置xBar和yBar比例尺的域
+        xBar.domain(barData.map(d => d.RegionName));
+        yBar.domain([0, d3.max(barData, d => d.price) * 1.1]);
+
+        // 添加x轴
+        barSvg.append("g")
+          .attr("class", "x-axis-bar")
+          .attr("transform", `translate(0,${heightBar})`)
+          .call(d3.axisBottom(xBar))
+          .selectAll(".axis-label")
+          .attr("x", widthBar / 2)
+          .attr("y", 35)
+          .attr("fill", "black")
+          .attr("text-anchor", "middle")
+          .attr("class", "axis-label")
+          .text("地区");
+
+        // 添加y轴
+        barSvg.append("g")
+          .attr("class", "y-axis-bar")
+          .call(d3.axisLeft(yBar))
+          .append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("x", -heightBar / 2)
+          .attr("y", -50)
+          .attr("fill", "black")
+          .attr("text-anchor", "middle")
+          .attr("class", "axis-label")
+          .text("平均房价");
+
+        // 添加网格线
+        barSvg.append("g")
+          .attr("class", "grid-bar")
+          .call(d3.axisLeft(yBar)
+              .ticks(5)
+              .tickSize(-widthBar)
+              .tickFormat("")
+          );
+
+        // 绘制柱状图
+        barSvg.selectAll(".bar")
+          .data(barData)
+          .enter()
+          .append("rect")
+          .attr("class", "bar")
+          .attr("x", d => xBar(d.RegionName))
+          .attr("width", xBar.bandwidth())
+          .attr("y", d => yBar(d.price))
+          .attr("height", d => heightBar - yBar(d.price))
+          .attr("fill", d => color(d.RegionName))
+          .on("mouseover", function(event, d) {
+            d3.select(this).attr("fill", d3.rgb(color(d.RegionName)).darker(1));
+            tooltip
+              .html(`<strong>地区: ${d.RegionName}</strong><br/>平均房价: $${d.price.toLocaleString()}`)
+              .style("left", (event.pageX + 15) + "px")
+              .style("top", (event.pageY - 28) + "px")
+              .style("opacity", 1);
+          })
+          .on("mouseout", function(event, d) {
+            d3.select(this).attr("fill", color(d.RegionName));
+            tooltip.style("opacity", 0);
+          });
+
+        // 添加柱状图标题
+        barSvg.append("text")
+          .attr("x", widthBar / 2)
+          .attr("y", -10)
+          .attr("text-anchor", "middle")
+          .attr("font-size", "14px")
+          .attr("font-weight", "bold")
+          .text(`平均房价 (${selectedYear})`);
+      }
+
+      // 初始状态下禁用Region下拉菜单并绘制初始图表
+      regionSelect.property("disabled", false).attr("disabled", null);
+      updateChart(statesData, "State");
+      updateBarChart(statesData, "All"); // 初始副图不显示
+
+    }).catch(function(error){
+      console.error("加载CSV数据失败:", error);
+    });
+  </script>
+</body>
+</html>
